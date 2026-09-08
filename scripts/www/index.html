@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>诗歌蓝版</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f0f0; }
+
+/* ======= 面板界面 ======= */
+#panel { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 16px; }
+.top-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+.btn-search, .btn-delete {
+  min-width: 80px; height: 56px; border-radius: 24px; border: 2.5px solid #333;
+  font-size: 22px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  background: #f0f0f0; color: #333; flex-shrink: 0;
+}
+.display-box {
+  flex: 1; height: 56px; border-radius: 28px; background: #fff; border: none;
+  font-size: 28px; font-weight: 500; color: #222; display: flex; align-items: center;
+  padding: 0 20px; overflow: hidden;
+}
+
+.keypad { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.key {
+  border-radius: 24px; border: 2.5px solid #333; font-size: 28px; font-weight: bold;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; color: #333;
+  transition: transform 0.1s, opacity 0.1s; min-height: 60px;
+}
+.key:active { transform: scale(0.95); opacity: 0.7; }
+.key-cat { background: #c5d9bf; }   /* 浅绿 */
+.key-num { background: #d9d9d9; }   /* 浅灰 */
+.key-other { background: #c5d9bf; color: #999; }
+.key-fu { background: #d9d9d9; }
+.key-0 { background: #d9d9d9; color: #999; }
+.key-confirm { background: #ff8888; color: #666; }
+.key:disabled { opacity: 0.5; pointer-events: none; }
+
+/* ======= PDF阅读界面 ======= */
+#pdf-viewer { display: none; width: 100%; height: 100%; flex-direction: column; background: #fff; position: fixed; top: 0; left: 0; z-index: 10; }
+.pdf-header {
+  height: 50px; background: #2a5db0; color: #fff; display: flex; align-items: center;
+  padding: 0 12px; font-size: 18px; font-weight: bold; flex-shrink: 0; gap: 12px;
+}
+.btn-back {
+  width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.2);
+  border: none; color: #fff; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.btn-back:active { background: rgba(255,255,255,0.4); }
+.pdf-title { flex: 1; text-align: center; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdf-info { font-size: 14px; opacity: 0.85; flex-shrink: 0; }
+
+.pdf-container { flex: 1; position: relative; overflow: hidden; background: #525659; }
+.pdf-frame { width: 100%; height: 100%; border: none; }
+.pdf-error {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  color: #ccc; text-align: center; font-size: 16px; line-height: 2;
+}
+.nav-arrow {
+  position: absolute; top: 0; width: 50px; height: 100%; display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); font-size: 32px; cursor: pointer;
+  transition: background 0.2s; z-index: 5; border: none;
+}
+.nav-arrow:active { background: rgba(255,255,255,0.25); color: rgba(255,255,255,0.9); }
+.nav-prev { left: 0; }
+.nav-next { right: 0; }
+
+/* ======= Toast提示 ======= */
+#toast {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.8);
+  background: rgba(0,0,0,0.82); color: #fff; padding: 18px 28px; border-radius: 14px;
+  font-size: 16px; z-index: 100; text-align: center; line-height: 1.7; max-width: 90%;
+  word-break: break-all; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s;
+}
+#toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+#toast .toast-label { font-size: 14px; opacity: 0.8; margin-bottom: 4px; }
+#toast .toast-path { color: #7eb8ff; font-size: 15px; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<!-- 主面板 -->
+<div id="panel">
+  <div class="top-bar">
+    <button class="btn-search" id="btnSearch">搜索</button>
+    <div class="display-box" id="display">大本</div>
+    <button class="btn-delete" id="btnDelete">删除</button>
+  </div>
+  <div class="keypad" id="keypad">
+    <button class="key key-cat" data-val="大本">大本</button>
+    <button class="key key-other" disabled></button>
+    <button class="key key-other" disabled></button>
+    <button class="key key-other" disabled>其它</button>
+
+    <button class="key key-cat" data-val="补充本">补充本</button>
+    <button class="key key-num" data-val="1">1</button>
+    <button class="key key-num" data-val="2">2</button>
+    <button class="key key-num" data-val="3">3</button>
+
+    <button class="key key-cat" data-val="青年">青年</button>
+    <button class="key key-num" data-val="4">4</button>
+    <button class="key key-num" data-val="5">5</button>
+    <button class="key key-num" data-val="6">6</button>
+
+    <button class="key key-cat" data-val="新歌">新歌</button>
+    <button class="key key-num" data-val="7">7</button>
+    <button class="key key-num" data-val="8">8</button>
+    <button class="key key-num" data-val="9">9</button>
+
+    <button class="key key-cat" data-val="儿童">儿童</button>
+    <button class="key key-fu" data-val="附">附</button>
+    <button class="key key-num" data-val="0">0</button>
+    <button class="key key-confirm" id="btnConfirm">确定</button>
+  </div>
+</div>
+
+<!-- PDF查看界面 -->
+<div id="pdf-viewer">
+  <div class="pdf-header">
+    <button class="btn-back" id="btnBack">←</button>
+    <div class="pdf-title" id="pdfTitle">诗歌</div>
+    <div class="pdf-info" id="pdfInfo"></div>
+  </div>
+  <div class="pdf-container" id="pdfContainer">
+    <iframe class="pdf-frame" id="pdfFrame" src=""></iframe>
+    <button class="nav-arrow nav-prev" id="btnPrev">‹</button>
+    <button class="nav-arrow nav-next" id="btnNext">›</button>
+    <div class="pdf-error" id="pdfError" style="display:none;">
+      PDF 文件加载失败<br>请检查文件路径是否正确
+    </div>
+  </div>
+</div>
+
+<!-- Toast提示 -->
+<div id="toast">
+  <div class="toast-label">正在打开</div>
+  <div class="toast-path" id="toastPath"></div>
+</div>
+
+<script>
+(function() {
+  // ============ 状态 ============
+  var DEFAULT_CAT = '大本';
+  var catMap = { '大本': 'db', '补充本': 'bcb', '青年': 'qn', '新歌': 'xg', '儿童': 'et' };
+
+  var state = { category: DEFAULT_CAT, fu: false, numStr: '' };
+  var currentNum = 0; // 当前PDF对应的第三部分数值
+
+  // ============ DOM ============
+  var display = document.getElementById('display');
+  var btnDelete = document.getElementById('btnDelete');
+  var btnConfirm = document.getElementById('btnConfirm');
+  var btnSearch = document.getElementById('btnSearch');
+  var keypad = document.getElementById('keypad');
+  var panel = document.getElementById('panel');
+  var pdfViewer = document.getElementById('pdf-viewer');
+  var pdfFrame = document.getElementById('pdfFrame');
+  var pdfTitle = document.getElementById('pdfTitle');
+  var pdfInfo = document.getElementById('pdfInfo');
+  var pdfError = document.getElementById('pdfError');
+  var btnBack = document.getElementById('btnBack');
+  var btnPrev = document.getElementById('btnPrev');
+  var btnNext = document.getElementById('btnNext');
+  var toast = document.getElementById('toast');
+  var toastPath = document.getElementById('toastPath');
+
+  // ============ 显示格式化 ============
+  function getSecond(num) {
+    if (state.fu) return '-';
+    if (num < 100) return '0';
+    if (num < 1600) return String(Math.floor(num / 100));
+    return String(Math.floor(num / 100));
+  }
+
+  function getThird(num) {
+    if (state.fu) {
+      // 附状态下，第三部分为当前数字3位补0
+      var s = state.numStr || '0';
+      while (s.length < 3) s = '0' + s;
+      return s;
+    }
+    var n = num;
+    var s = String(n);
+    if (s.length >= 4) return s;
+    while (s.length < 3) s = '0' + s;
+    return s;
+  }
+
+  function getDisplayText() {
+    var num = parseInt(state.numStr) || 0;
+    var second = getSecond(num);
+    var third = getThird(num);
+    if (state.fu) {
+      return state.category + '-' + third;
+    }
+    if (state.numStr === '') {
+      return state.category;
+    }
+    return state.category + second + third;
+  }
+
+  function updateDisplay() {
+    display.textContent = getDisplayText();
+  }
+
+  // ============ 构建路径 ============
+  function buildPath() {
+    var num = parseInt(state.numStr) || 0;
+    var catCode = catMap[state.category] || 'db';
+    var second = getSecond(num);
+    var third = getThird(num);
+    var relPath = 'sglb/' + catCode + '/' + second + '/' + third + '.pdf';
+    var absPath = 'file:///storage/emulated/0/' + relPath;
+    var displayPath = '手机内部存储器根目录/' + relPath;
+    return { rel: relPath, abs: absPath, display: displayPath, second: second, third: third };
+  }
+
+  // ============ Toast ============
+  var toastTimer = null;
+  function showToast(pathInfo) {
+    toastPath.textContent = pathInfo.display;
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() {
+      toast.classList.remove('show');
+    }, 1200);
+  }
+
+  // ============ 打开PDF ============
+  function openPdf() {
+    var pathInfo = buildPath();
+    showToast(pathInfo);
+
+    pdfError.style.display = 'none';
+    // 使用绝对路径：手机内部存储器根目录
+    pdfFrame.src = pathInfo.abs;
+
+    // 记录当前数字（用于翻页）
+    currentNum = parseInt(state.numStr) || 0;
+
+    // 延迟显示PDF页
+    setTimeout(function() {
+      panel.style.display = 'none';
+      pdfViewer.style.display = 'flex';
+      pdfTitle.textContent = state.category + ' 第' + pathInfo.third + '首';
+      pdfInfo.textContent = pathInfo.second + '/' + pathInfo.third;
+    }, 400);
+  }
+
+  function resetPanel() {
+    state = { category: DEFAULT_CAT, fu: false, numStr: '' };
+    updateDisplay();
+  }
+
+  // ============ 返回面板 ============
+  function backToPanel() {
+    pdfViewer.style.display = 'none';
+    panel.style.display = 'flex';
+    pdfFrame.src = '';
+    resetPanel();
+  }
+
+  // ============ 翻页 ============
+  function turnPage(delta) {
+    if (state.fu) return; // 附状态下不翻页
+    var n = currentNum + delta;
+    if (n < 1) n = 1;
+    if (n > 1599) n = 1599;
+    currentNum = n;
+    state.numStr = String(n);
+    state.fu = false;
+
+    var pathInfo = buildPath();
+    showToast(pathInfo);
+    pdfError.style.display = 'none';
+    pdfFrame.src = pathInfo.abs;
+    pdfTitle.textContent = state.category + ' 第' + pathInfo.third + '首';
+    pdfInfo.textContent = pathInfo.second + '/' + pathInfo.third;
+  }
+
+  // ============ 按键事件 ============
+  keypad.addEventListener('click', function(e) {
+    var btn = e.target.closest('.key');
+    if (!btn) return;
+    if (btn.disabled) return;
+    var val = btn.getAttribute('data-val');
+    if (!val) return;
+
+    if (val === '附') {
+      if (state.numStr.length >= 4) return;
+      state.fu = true;
+      if (state.numStr === '') state.numStr = '0';
+    } else if (catMap[val]) {
+      // 切换类别
+      state.category = val;
+      state.fu = false;
+      state.numStr = '';
+    } else {
+      // 数字
+      if (state.numStr.length >= 4) return;
+      if (state.numStr === '0') state.numStr = val;
+      else state.numStr += val;
+    }
+    updateDisplay();
+  });
+
+  // 删除
+  btnDelete.addEventListener('click', function() {
+    if (state.numStr.length > 0) {
+      state.numStr = state.numStr.slice(0, -1);
+      if (state.fu && state.numStr === '') {
+        state.fu = false;
+      }
+    } else if (state.fu) {
+      state.fu = false;
+    } else if (state.category !== DEFAULT_CAT) {
+      state.category = DEFAULT_CAT;
+    } else {
+      return;
+    }
+    if (state.numStr === '0' && !state.fu) state.numStr = '';
+    updateDisplay();
+  });
+
+  // 确定/搜索
+  btnConfirm.addEventListener('click', openPdf);
+  btnSearch.addEventListener('click', openPdf);
+
+  // 返回
+  btnBack.addEventListener('click', backToPanel);
+
+  // 翻页按钮
+  btnPrev.addEventListener('click', function() { turnPage(-1); });
+  btnNext.addEventListener('click', function() { turnPage(1); });
+
+  // ============ 滑动手势 ============
+  var touchStartX = 0, touchStartY = 0, touchMoved = false;
+  var container = document.getElementById('pdfContainer');
+
+  container.addEventListener('touchstart', function(e) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchMoved = false;
+  }, { passive: true });
+
+  container.addEventListener('touchmove', function(e) {
+    var dx = e.touches[0].clientX - touchStartX;
+    var dy = e.touches[0].clientY - touchStartY;
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+      touchMoved = true;
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchend', function(e) {
+    if (!touchMoved) return;
+    var dx = e.changedTouches[0].clientX - touchStartX;
+    if (dx < -60) {
+      turnPage(1);   // 左滑 → 下一首
+    } else if (dx > 60) {
+      turnPage(-1);  // 右滑 → 上一首
+    }
+  }, { passive: true });
+
+  // ============ 鼠标拖拽（PC测试用） ============
+  var mouseDown = false, mouseStartX = 0;
+  container.addEventListener('mousedown', function(e) {
+    mouseDown = true; mouseStartX = e.clientX;
+  });
+  container.addEventListener('mouseup', function(e) {
+    if (!mouseDown) return;
+    mouseDown = false;
+    var dx = e.clientX - mouseStartX;
+    if (dx < -60) turnPage(1);
+    else if (dx > 60) turnPage(-1);
+  });
+
+  // ============ 键盘支持（返回/翻页） ============
+  document.addEventListener('keydown', function(e) {
+    if (pdfViewer.style.display === 'flex') {
+      if (e.key === 'Escape' || e.key === 'Backspace') {
+        e.preventDefault();
+        backToPanel();
+      } else if (e.key === 'ArrowLeft') {
+        turnPage(-1);
+      } else if (e.key === 'ArrowRight') {
+        turnPage(1);
+      }
+    }
+  });
+
+  // ============ 物理返回键（history hack） ============
+  window.addEventListener('popstate', function() {
+    if (pdfViewer.style.display === 'flex') {
+      backToPanel();
+      history.pushState(null, '', location.href);
+    }
+  });
+
+  // 初始
+  updateDisplay();
+})();
+</script>
+</body>
+</html><!--22854215322573747210090715-->
